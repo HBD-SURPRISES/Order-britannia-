@@ -382,4 +382,86 @@
             for(var oIdx = 0; oIdx < filteredOrders.length; oIdx++) {
                 var o = filteredOrders[oIdx];
                 var html = '<div class="saved-order-card">';
-                html += '<strong>' + o.party + '</strong> <br><small style="color:gray"
+                html += '<strong>' + o.party + '</strong> <br><small style="color:gray">' + o.date + '</small>';
+                html += '<div class="order-details-box">';
+                
+                var grandTotal = 0;
+                for(var i = 0; i < o.items.length; i++) {
+                    var item = o.items[i];
+                    html += '<div style="margin-bottom: 5px;"><b>' + item.name + '</b><br>';
+                    if(item.pq) {
+                        if(item.comp) { html += ' - ' + item.pq + ' Pcs (Company Rate)<br>'; } 
+                        else { var t1 = item.pq * item.pr; grandTotal += t1; html += ' - ' + item.pq + ' Pcs x ₹' + item.pr + ' = ₹' + t1 + '<br>'; }
+                    }
+                    if(item.cq) {
+                        if(item.comp) { html += ' - ' + item.cq + ' Cases (Company Rate)<br>'; } 
+                        else { var t2 = item.cq * item.cr; grandTotal += t2; html += ' - ' + item.cq + ' Cases x ₹' + item.cr + ' = ₹' + t2 + '<br>'; }
+                    }
+                    html += '</div>';
+                }
+                
+                html += '</div>';
+                if(grandTotal > 0) { html += '<div class="grand-total">Total Bill: ₹' + grandTotal + '</div>'; }
+                html += '</div>';
+                list.innerHTML += html;
+            }
+        }
+
+        function shareAllOrders() {
+            var filterDate = document.getElementById('order-date-filter').value;
+            var orders = JSON.parse(localStorage.getItem('savedOrders')) || [];
+            
+            var filteredOrders = [];
+            for(var k = 0; k < orders.length; k++) {
+                if(!filterDate || orders[k].dateValue === filterDate) {
+                    filteredOrders.push(orders[k]);
+                }
+            }
+
+            if(filteredOrders.length === 0) { alert("शेयर करने के लिए कोई ऑर्डर नहीं है!"); return; }
+
+            var msg = "*ORDERS (" + filteredOrders.length + ")*\n*Salesman:* " + currentSalesman + "\n";
+            if (filterDate) {
+                var parts = filterDate.split('-');
+                if(parts.length === 3) {
+                    msg += "*Date:* " + parts[2] + "-" + parts[1] + "-" + parts[0] + "\n\n";
+                }
+            } else {
+                msg += "\n";
+            }
+            
+            for(var oIdx = 0; oIdx < filteredOrders.length; oIdx++) {
+                var o = filteredOrders[oIdx];
+                msg += "*" + (oIdx + 1) + ". Party Name:* *" + o.party + "*\n";
+                var partyTotal = 0;
+                
+                for(var i = 0; i < o.items.length; i++) {
+                    var item = o.items[i];
+                    msg += "- " + item.name + "\n";
+                    if(item.pq) {
+                        if(item.comp) { msg += "   " + item.pq + " Pcs (Company Rate)\n"; } 
+                        else { var t1 = item.pq * item.pr; partyTotal += t1; msg += "   " + item.pq + " Pcs x ₹" + item.pr + " = ₹" + t1 + "\n"; }
+                    }
+                    if(item.cq) {
+                        if(item.comp) { msg += "   " + item.cq + " Cases (Company Rate)\n"; } 
+                        else { var t2 = item.cq * item.cr; partyTotal += t2; msg += "   " + item.cq + " Cases x ₹" + item.cr + " = ₹" + t2 + "\n"; }
+                    }
+                }
+                
+                if(partyTotal > 0) { msg += "*Total Bill: ₹" + partyTotal + "*\n"; }
+                msg += "-------------------\n\n";
+            }
+
+            window.open("https://wa.me/" + phoneNo + "?text=" + encodeURIComponent(msg), '_blank');
+        }
+
+        function resetApp() {
+            document.getElementById('party-name').value = "";
+            document.getElementById('party-number').value = "";
+            document.getElementById('party-address').value = "";
+            document.getElementById('search-input').value = "";
+            renderProducts(); 
+        }
+    </script>
+</body>
+</html>
