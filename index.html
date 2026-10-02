@@ -12,8 +12,14 @@
         /* Screens */
         #login-screen, #party-screen { display: flex; flex-direction: column; align-items: center; justify-content: center; height: 100vh; background: white; }
         .login-box { padding: 20px; border-radius: 10px; box-shadow: 0 4px 8px rgba(0,0,0,0.1); width: 90%; max-width: 400px; text-align: center; }
-        select, input[type="text"], input[type="number"], input[type="date"] { width: 100%; padding: 10px; margin: 10px 0; border: 1px solid #ccc; border-radius: 5px; box-sizing: border-box; }
+        select, input[type="text"], input[type="number"], input[type="date"] { width: 100%; padding: 10px; margin: 10px 0; border: 1px solid #ccc; border-radius: 5px; box-sizing: border-box; font-size:14px; }
         button { border: none; font-size: 16px; font-weight: bold; border-radius: 5px; cursor: pointer; width: 100%; }
+        
+        /* Custom Autocomplete Dropdown */
+        .autocomplete-wrapper { position: relative; width: 100%; }
+        .autocomplete-list { position: absolute; background: white; border: 1px solid #ccc; width: 100%; max-height: 200px; overflow-y: auto; z-index: 1000; display: none; border-radius: 0 0 5px 5px; box-shadow: 0 4px 6px rgba(0,0,0,0.1); text-align: left; }
+        .autocomplete-item { padding: 12px 10px; border-bottom: 1px solid #eee; font-size: 14px; color: #333; cursor: pointer; }
+        .autocomplete-item:hover { background-color: #f0f0f0; color: #d32f2f; font-weight: bold; }
         
         /* Main App */
         #app-screen, #cart-modal, #preview-modal, #saved-orders-modal, #trash-modal, #drafts-modal { display: none; }
@@ -84,8 +90,11 @@
             <h2 style="color:#d32f2f;">पार्टी की जानकारी</h2>
             <p style="font-size:12px; color:gray; text-align:left; margin-bottom:5px;">पार्टी का नाम सर्च करें या नया लिखें:</p>
             
-            <input type="text" id="party-name-input" list="party-datalist" placeholder="पार्टी का नाम..." onchange="autoFillParty()">
-            <datalist id="party-datalist"></datalist>
+            <!-- Custom Search Field -->
+            <div class="autocomplete-wrapper">
+                <input type="text" id="party-name-input" placeholder="पार्टी का नाम सर्च करें..." autocomplete="off" onkeyup="filterCustomParties()" onfocus="filterCustomParties()">
+                <div id="custom-party-list" class="autocomplete-list"></div>
+            </div>
             
             <input type="number" id="party-number-input" placeholder="मोबाइल नंबर (ऑप्शनल)">
             <input type="text" id="party-address-input" placeholder="पता / Station (ऑप्शनल)">
@@ -198,6 +207,11 @@
     </div>
 
     <script>
+        // ==========================================
+        // ADMIN SETTINGS: Google App Script URL
+        // ==========================================
+        var GOOGLE_SHEET_API_URL = "https://script.google.com/macros/s/AKfycbzxkYWTeclWjoZnTXpOp7rV5KMPJuYtsHb3nBhIMpdiIogOpLywQErcI1sEHeodp_7t4A/exec"; 
+        
         var products = [];
         var partiesData = [];
         
@@ -209,12 +223,20 @@
         var phoneNo = "917219929217";
         var isDraftLoading = false;
 
-        // --- DATA LOADING LOGIC ---
         window.onload = function() {
             cleanTrash();
             fetchCSVData();
             fetchPartiesData();
         };
+
+        // --- HIDE DROPDOWN IF CLICKED OUTSIDE ---
+        document.addEventListener("click", function(event) {
+            var list = document.getElementById('custom-party-list');
+            var input = document.getElementById('party-name-input');
+            if (event.target !== input && event.target !== list) {
+                list.style.display = "none";
+            }
+        });
 
         function fetchCSVData() {
             var url = 'stock.csv?v=' + new Date().getTime();
@@ -275,7 +297,6 @@
             populateCompanyDropdown(companiesSet);
         }
 
-        // --- PARTIES CSV LOGIC ---
         function fetchPartiesData() {
             var url = 'parties.csv?v=' + new Date().getTime();
             fetch(url)
@@ -298,9 +319,6 @@
         function parsePartiesCSV(text) {
             var lines = text.split(/\r?\n/);
             partiesData = [];
-            var datalist = document.getElementById('party-datalist');
-            datalist.innerHTML = "";
-            
             var delimiter = ',';
             if ((lines[0]||"").indexOf('\t') !== -1) delimiter = '\t';
             
@@ -309,29 +327,48 @@
                 if(!line) continue;
                 var cols = delimiter === ',' ? line.split(/,(?=(?:(?:[^"]*"){2})*[^"]*$)/) : line.split(delimiter);
                 
-                // Column B (Index 1) -> ledgerName
                 if(cols.length > 1 && cols[1]) {
                     var pName = cols[1].replace(/^"|"$/g, '').trim();
-                    // Column D (Index 3) -> Station
                     var pAdd = (cols.length > 3 && cols[3]) ? cols[3].replace(/^"|"$/g, '').trim() : "";
-                    var pNum = ""; // No phone number in new format
+                    var pNum = ""; 
                     
                     if(pName && pName.toLowerCase() !== "ledgername") {
                         partiesData.push({name: pName, num: pNum, add: pAdd});
-                        var opt = document.createElement('option');
-                        opt.value = pName;
-                        datalist.appendChild(opt);
                     }
                 }
             }
         }
 
-        function autoFillParty() {
-            var inputName = document.getElementById('party-name-input').value;
-            var party = partiesData.find(p => p.name === inputName);
-            if(party) {
-                document.getElementById('party-address-input').value = party.add || "";
-                document.getElementById('party-number-input').value = party.num || ""; // Will be blank as per current format
+        // --- NEW CUSTOM AUTOCOMPLETE LOGIC ---
+        function filterCustomParties() {
+            var inputVal = document.getElementById('party-name-input').value.toLowerCase();
+            var listDiv = document.getElementById('custom-party-list');
+            listDiv.innerHTML = "";
+            
+            var matchCount = 0;
+            for (var i = 0; i < partiesData.length; i++) {
+                if (partiesData[i].name.toLowerCase().indexOf(inputVal) !== -1) {
+                    var div = document.createElement("div");
+                    div.className = "autocomplete-item";
+                    div.innerText = partiesData[i].name;
+                    
+                    div.onclick = (function(partyObj) {
+                        return function() {
+                            document.getElementById('party-name-input').value = partyObj.name;
+                            document.getElementById('party-address-input').value = partyObj.add || "";
+                            document.getElementById('party-number-input').value = partyObj.num || "";
+                            document.getElementById('custom-party-list').style.display = 'none';
+                        };
+                    })(partiesData[i]);
+                    
+                    listDiv.appendChild(div);
+                    matchCount++;
+                }
+            }
+            if(matchCount > 0) {
+                listDiv.style.display = 'block';
+            } else {
+                listDiv.style.display = 'none';
             }
         }
 
@@ -348,7 +385,6 @@
             }
         }
 
-        // --- UI NAVIGATION LOGIC ---
         function checkSalesman() {
             var sel = document.getElementById('salesman-select').value;
             document.getElementById('other-salesman').style.display = (sel === "Company Salesman") ? "block" : "none";
@@ -453,7 +489,6 @@
             }
         }
 
-        // --- NEW AUTO-DRAFT SYSTEM ---
         function autoSaveDraft() {
             if(isDraftLoading) return; 
             var items = [];
@@ -667,6 +702,51 @@
             document.getElementById('preview-modal').style.display = 'block';
         }
 
+        function sendToAdminBackend(orderData) {
+            if(GOOGLE_SHEET_API_URL === "YOUR_GOOGLE_SCRIPT_URL_HERE") return; 
+            
+            var now = new Date();
+            var timeString = now.toLocaleTimeString('en-IN', { hour: '2-digit', minute: '2-digit', hour12: true });
+            
+            // Format Items to look like WhatsApp message
+            var formattedItems = "";
+            var grandTotal = 0;
+            for(var i = 0; i < orderData.items.length; i++) {
+                var item = orderData.items[i];
+                formattedItems += (i+1) + ". " + item.name + "\n";
+                if(item.pq) {
+                    if(item.comp) { formattedItems += "   > " + item.pq + " Pcs (Company Rate)\n"; } 
+                    else { var t1 = item.pq * item.pr; grandTotal += t1; formattedItems += "   > " + item.pq + " Pcs x ₹" + item.pr + " = ₹" + t1 + "\n"; }
+                }
+                if(item.cq) {
+                    if(item.comp) { formattedItems += "   > " + item.cq + " Cases (Company Rate)\n"; } 
+                    else { var t2 = item.cq * item.cr; grandTotal += t2; formattedItems += "   > " + item.cq + " Cases x ₹" + item.cr + " = ₹" + t2 + "\n"; }
+                }
+            }
+            if(grandTotal > 0) { formattedItems += "\n=> Total Bill: ₹" + grandTotal; }
+
+            var payload = {
+                date: orderData.dateValue,
+                time: timeString,
+                salesman: orderData.salesman,
+                partyName: orderData.party,
+                partyNum: currentPartyNum ? currentPartyNum : "नंबर नहीं",
+                partyAdd: currentPartyAdd ? currentPartyAdd : "पता नहीं",
+                totalItems: orderData.items.length,
+                itemsDetail: formattedItems
+            };
+
+            fetch(GOOGLE_SHEET_API_URL, {
+                method: 'POST',
+                mode: 'no-cors',
+                headers: {
+                    'Content-Type': 'text/plain;charset=utf-8'
+                },
+                body: JSON.stringify(payload)
+            }).then(() => console.log("Order Tracking Sent"))
+              .catch(e => console.log("Tracking Error:", e));
+        }
+
         function saveCurrentOrder() {
             var items = getCartData();
             if(items.length === 0) { alert("ऑर्डर खाली है!"); return; }
@@ -686,17 +766,22 @@
             var mm = ("0" + (today.getMonth() + 1)).slice(-2);
             var dd = ("0" + today.getDate()).slice(-2);
 
-            var orders = JSON.parse(localStorage.getItem('savedOrders')) || [];
-            orders.push({
+            var newOrder = {
                 salesman: currentSalesman,
                 party: currentPartyName,
                 date: today.toLocaleString('en-IN'),
                 dateValue: yyyy + '-' + mm + '-' + dd,
                 items: items
-            });
+            };
+
+            var orders = JSON.parse(localStorage.getItem('savedOrders')) || [];
+            orders.push(newOrder);
             localStorage.setItem('savedOrders', JSON.stringify(orders));
             localStorage.removeItem('autoDraft_' + currentSalesman);
             
+            // Send beautifully formatted data to Admin Google Sheet silently
+            sendToAdminBackend(newOrder);
+
             alert("ऑर्डर सफलतापूर्वक सेव हो गया!");
             closeModal('cart-modal');
             
